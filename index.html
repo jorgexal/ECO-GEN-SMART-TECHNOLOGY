@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard de Equipos</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <style>
+        body, table {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+        }
+
+        header {
+            background-color: #f8f9fa;
+            padding: 10px;
+            display: flex;
+            align-items: center;
+        }
+
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+
+        .left, .right {
+            width: 50%;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .right {
+            border-left: 1px solid #ccc;
+        }
+
+        #map {
+            height: 100%;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+            box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.2);
+            border-radius: 5px;
+            overflow: hidden;
+        }
+
+        th, td {
+            padding: 10px;
+            border: 1px solid #ccc;
+            text-align: left;
+            color: green; /* Cambia el color de las letras a verde */
+        }
+
+        th {
+            background-color: #e0e0e0; /* Gris más fuerte para encabezados */
+            font-weight: bold;
+        }
+
+        tr:nth-child(even) {
+            background-color: #f7f7f7; /* Color de fondo para filas pares */
+        }
+
+        #status {
+            color: red;
+            font-weight: bold;
+        }
+
+        .coordinates {
+            margin-top: 10px;
+        }
+
+        .debug {
+            margin-top: 20px;
+            font-size: 12px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Dashboard de Equipos</h1>
+</header>
+
+<div class="container">
+    <div class="left">
+        <h2>Datos del Cliente</h2>
+        <h3>Información del Cliente</h3>
+        <table>
+            <tr>
+                <th>ID Cliente</th>
+                <td>
+                    <select>
+                        <option value="0001">0001</option>
+                        <option value="0002">0002</option>
+                        <option value="0003">0003</option>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <th>ID Equipo</th>
+                <td><input type="text"></td>
+            </tr>
+            <tr>
+                <th>Fecha Venta</th>
+                <td><input type="date"></td>
+            </tr>
+            <tr>
+                <th>Fecha Instalación</th>
+                <td><input type="date"></td>
+            </tr>
+        </table>
+
+        <h3>Información de Operación</h3>
+        <table>
+            <tr>
+                <th>Frecuencia Variador (Hz)</th>
+                <td><input type="text"></td>
+            </tr>
+            <tr>
+                <th>Presión Crítica (Bar)</th>
+                <td><input type="text"></td>
+            </tr>
+            <tr>
+                <th>Presión de Trabajo</th>
+                <td><input type="text"></td>
+            </tr>
+            <tr>
+                <th>Fecha Parada Programada</th>
+                <td><input type="date"></td>
+            </tr>
+            <tr>
+                <th>Hora Parada Programada</th>
+                <td><input type="time"></td>
+            </tr>
+        </table>
+
+        <h3>Estado del Equipo</h3>
+        <table>
+            <tr>
+                <th>Estado del Variador</th>
+                <td>
+                    <select>
+                        <option value="apagado">Apagado</option>
+                        <option value="encendido">Encendido</option>
+                    </select>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="right">
+        <h1>Mapa</h1>
+        <div id="map"></div>
+        <p id="status">Esperando señal GPS...</p>
+
+        <div class="coordinates">
+            <p>Latitud: <span id="lat">-</span></p>
+            <p>Longitud: <span id="lng">-</span></p>
+        </div>
+
+        <div class="debug">
+            <p><strong>Depuración:</strong></p>
+            <p id="debug-log">Esperando datos...</p>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script>
+    var map = L.map('map').setView([0, 0], 2);
+    var marker = L.marker([0, 0]).addTo(map);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 20,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    var lastPos = [0, 0];
+
+    function updateCoordinates() {
+        const controller = new AbortController();
+        const signal = controller.signal;
+
+        setTimeout(() => controller.abort(), 5000);
+
+        fetch('http://192.168.0.8:80/coords', { signal })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error("Error en la respuesta del servidor");
+                }
+                return response.json();
+            })
+            .then(data => {
+                document.getElementById('debug-log').textContent = JSON.stringify(data);
+
+                if (data.status === "Esperando señal GPS" || (data.lat === 0 && data.lng === 0)) {
+                    document.getElementById('status').textContent = "Esperando señal GPS...";
+                    map.setView([0, 0], 2);
+                } else {
+                    var newLat = data.lat;
+                    var newLng = data.lng;
+                    var newPos = [newLat, newLng];
+
+                    document.getElementById('lat').textContent = newLat.toFixed(6);
+                    document.getElementById('lng').textContent = newLng.toFixed(6);
+
+                    if (Math.abs(lastPos[0] - newLat) > 0.0001 || Math.abs(lastPos[1] - newLng) > 0.0001) {
+                        marker.setLatLng(newPos);
+                        map.setView(newPos, 16);
+                        lastPos = newPos;
+                    }
+
+                    document.getElementById('status').textContent = "Ubicación obtenida";
+                }
+            })
+            .catch(error => {
+                if (error.name === 'AbortError') {
+                    document.getElementById('status').textContent = "Tiempo de espera agotado al obtener los datos GPS";
+                } else {
+                    console.error('Error al obtener los datos del GPS:', error);
+                    document.getElementById('status').textContent = "Error al obtener los datos del GPS";
+                }
+                document.getElementById('debug-log').textContent = "Error: " + error.message;
+            });
+    }
+
+    setInterval(updateCoordinates, 5000);
+</script>
+
+</body>
+</html>
